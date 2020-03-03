@@ -1,0 +1,284 @@
+<!--  -->
+<template>
+    <view class="xyd-user container">
+        <view class="title">
+            <text>会员</text>
+        </view>
+        <view class="content">
+            <view>
+                <text>{{isVip > 0 ? '会员剩余 '+vipDay : '开通会员免押使用30天'}}</text>
+            </view>
+            <view>
+                <van-button type="primary" size="small" @click="openVip">{{isVip > 0 ? '续 费' : '开 通'}}</van-button>
+            </view>
+        </view>
+        <!-- <view class="title">
+            <text>押金</text>
+        </view> -->
+        <!-- <view class="content">
+            <view>
+                <text>押金 25元</text>
+            </view>
+            <view class="deco">
+                <text>归还充电宝自动退押金</text>
+            </view>
+        </view> -->
+        <view class="title">
+            <text>我的订单</text>
+        </view>
+        <view class="tab-wp">
+            <van-tabs bind:active="{{ active }}" bind:change="onChange" color="#f80">
+                <van-tab title="进行中"></van-tab>
+                <van-tab title="已完成"></van-tab>
+            </van-tabs>
+            <view class="tab-list">
+                <view class="nothing" wx:if="{{nothing}}">
+                    <text>暂无记录</text>
+                </view>
+                <repeat for="{{items}}" key="index" index="index" item="item">
+                    <view class="item">
+                        <view class="info">
+                            <view class="h3"><text>订单号：{{item.order_no}}</text></view>
+                            <view class="p"><text>借：{{item.create_time}}</text></view>
+                            <view class="p"><text>还：{{item.pay_time ? item.pay_time_form : '进行中'}}</text></view>
+                            <view class="p"><text>押金：{{item.order_type_des}}</text></view>
+                        </view>
+                        <view class="btn-group">
+                            <view class="p"><text class="money">¥{{item.pay_price}}</text></view>
+                            <view class="p"><text class="deco">{{item.pay_status.text}}</text></view>
+                        </view>
+                    </view>
+                </repeat>
+            </view>
+        </view>
+    </view>
+</template>
+
+<script>
+import wepy from 'wepy';
+import common from '../utils/common'
+import { connect } from 'wepy-redux'
+import { getUserInfo } from '../store/actions'
+import fly from "../utils/http.js";
+import baseUrl from '../utils/baseUrlConfig.js'
+
+@connect({
+    userInfo (state) {
+        return state.counter.userInfo
+    }
+}, {
+    getUserInfo: getUserInfo
+})
+
+export default class Example extends wepy.page {
+    config = {
+        navigationBarTitleText: '校云电'
+    };
+
+    data = {
+        active: 0,
+        nothing: false,
+        items: [],
+
+        isVip: '',
+        vipDay: '25',
+    };
+
+    components = {};
+
+    methods = {
+        onChange(e) {
+            this.active = e.detail.index;
+            this.getOrderList();
+        },
+        openVip() {
+            wx.showModal({
+                title: this.isVip > 0 ? '续 费' : '开 通',
+                content: '会员30元/月，确定充值吗？',
+                success: (res) => {
+                    if (res.confirm) {
+                        fly.post(baseUrl + '/index.php?s=/api/Recharge/submit', {
+                            wxapp_id: wx.getStorageSync('wxapp_id'),
+                            token: wx.getStorageSync('token'),
+                            plan_id: this.isVip > 0 ? '10002' : '10001',   // 10001  开通会员   10002是续费
+                        }).then(result => {
+                            let { code, msg, data } = result;
+                            if (code == 1) {
+                                let payment = data.payment || {};
+                                wx.requestPayment({
+                                    'timeStamp': payment.timeStamp,
+                                    'nonceStr': payment.nonceStr,
+                                    'package': 'prepay_id=' + payment.prepay_id,
+                                    'signType': 'MD5',
+                                    'paySign': payment.paySign,
+                                    'success': (res) => { 
+                                        wx.showToast({
+                                            title: "充值成功",
+                                            icon: 'success',
+                                            duration: 3000
+                                        })
+                                        this.initUserInfo()
+                                    },
+                                    'fail': (res) => {
+                                        console.log(2, res);
+                                        wx.showToast({
+                                            title: "充值失败",
+                                            icon: 'none',
+                                            duration: 3000
+                                        })
+                                    },
+                                    'complete': (res) => {
+                                        console.log(33, this);
+                                    }
+                                })
+                            } else {
+                                wx.showToast({
+                                    title: msg.error,
+                                    icon: 'none',
+                                    duration: 3000
+                                })
+                            }
+                        })
+                    } else if (res.cancel) {
+                        console.log('用户点击取消')
+                    }
+                }
+            })
+        },
+    };
+
+    getOrderList() {
+        fly.post(baseUrl + '/index.php?s=/api/order/order_list', {
+            wxapp_id: wx.getStorageSync('wxapp_id'),
+            token: wx.getStorageSync('token'),
+        }).then(result => {
+            let { code, msg, data } = result;
+            if (code == 1) {
+                let list = data.list.data || [];
+                list = list.map((item) => Object.assign({}, item, {
+                    order_type_des: item.order_type == 1 ? '身份证' : '会员',
+                    pay_time_form: common.formatTime(item.pay_time * 1000),
+                }))
+                if (this.active == 0) {
+                    this.items = list.filter(item => item.pay_status.value == 10);
+                    this.nothing = this.items.length == 0;
+                } else if (this.active == 1) {
+                    this.items = list.filter(item => item.pay_status.value == 20);
+                    this.nothing = this.items.length == 0;
+                }
+            } else {
+                wx.showToast({
+                    title: msg,
+                    icon: 'none',
+                    duration: 3000
+                })
+            }
+            this.$apply()
+        })
+    }
+
+    events = {};
+
+    watch = {};
+
+    computed = {};
+
+    initUserInfo() {
+        this.methods.getUserInfo().then(() => {
+            let Dtime = this.userInfo.vip_valid_date - parseInt(new Date().getTime()/1000);
+            if (Dtime > 0) {
+                this.vipDay = common.formatDuring(Dtime)
+            } else {
+                this.vipDay = '已到期';
+            }
+            this.$apply();
+        })
+    }
+
+    onLoad() {
+        this.isVip = this.userInfo.grade_id || 0;
+    }
+
+    onShow() {
+        this.getOrderList();
+    }
+
+    onTabItemTap() {
+        this.initUserInfo()
+    }
+}
+</script>
+
+<style lang='less'>
+.xyd-user {
+    .title {
+        width: 100%;
+        font-size: 30rpx;
+        padding: 30rpx;
+    }
+    .content {
+        width: 100%;
+        padding: 30rpx;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background-color: #fff;
+        font-size: 28rpx;
+        .deco {
+            font-size: 24rpx;
+            color: #999;
+        }
+    }
+    .tab-wp {
+        width: 100%;
+        .tab-list {
+            padding: 30rpx;
+            .nothing {
+                text-align: center;
+                padding: 30rpx;
+                color: #acacac;
+                font-size: 28rpx;
+            }
+            .item {
+                padding: 30rpx;
+                display: flex;
+                align-items: center;
+                background-color: #fff;
+                margin-bottom: 10rpx;
+                border-radius: 16rpx;
+                box-shadow: 0 0 6px #dcdcdc;
+                .info {
+                    flex: 1;
+                    .h3 {
+                        font-size: 30rpx;
+                        font-weight: 700;
+                        margin-bottom: 6rpx;
+                    }
+                    .p {
+                        color: #787878;
+                        line-height: 1.6;
+                        font-size: 28rpx;
+                        &:last-child {
+                            margin-top: 8rpx;
+                        }
+                    }
+                }
+                .btn-group {
+                    .p {
+                        padding: 5px 0;
+                        text-align: right;
+                        .money {
+                            font-size: 28rpx;
+                            font-weight: 700;
+                        }
+                        .deco {
+                            font-size: 32rpx;
+                            color: #f40;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+</style>

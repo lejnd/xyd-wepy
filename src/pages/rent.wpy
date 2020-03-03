@@ -1,0 +1,413 @@
+<!--  -->
+<template>
+    <view class="xyd-rent container">
+        <view class="title">
+            <text>押金方式</text>
+        </view>
+        <view class="content">
+            <van-radio-group value="{{ radio }}" bind:change="onChange">
+                <van-cell-group>
+                    <van-cell
+                        wx:if="{{this.isVip !== 0}}"
+                        title="身份证"
+                        clickable
+                        data-name="1"
+                        bind:click="onClick"
+                    >
+                        <van-radio slot="right-icon" name="1" />
+                    </van-cell>
+                    <!-- <van-cell
+                        title="押金"
+                        clickable
+                        data-name="2"
+                        bind:click="onClick"
+                    >
+                        <van-radio slot="right-icon" name="2" />
+                    </van-cell> -->
+                    <van-cell
+                        title="会员免押金"
+                        clickable
+                        data-name="2"
+                        bind:click="onClick"
+                    >
+                        <van-radio slot="right-icon" name="2" />
+                    </van-cell>
+                </van-cell-group>
+            </van-radio-group>
+        </view>
+        <view class="title" wx:if="{{radio=='1'}}">
+            <text>身份证拍照</text>
+        </view>
+        <view class="idcard-wp" wx:if="{{radio=='1'}}">
+            <view class="idcard" @tap="uploadImg">
+                <van-icon wx:if="{{!idcradImg}}" name="plus" size="40px" color="#999" />
+                <image wx:else src="{{idcradImg}}" mode="scaleToFill"lazy-load="false" />
+            </view>
+        </view>
+        <view class="btn-wp">
+            <van-button type="primary" block @tap="onSubmit">确 定</van-button>
+        </view>
+        <van-dialog
+            use-slot
+            id="bindDialog"
+            title="完善资料"
+            show="{{ showBind }}"
+            show-cancel-button
+            async-close
+            @close="onClose"
+        >
+            <van-cell-group class="dialog-content">
+                <van-field value="{{ realName }}" label="姓   名" placeholder="请输入姓名" border="{{ false }}" bind:change="inputNameChange"/>
+                <van-field value="{{ mobile }}" label="手机号" placeholder="请输入手机号" border="{{ false }}" bind:change="inputMobileChange"/>
+                <van-field
+                    value="{{ sms }}"
+                    center
+                    clearable
+                    label="验证码"
+                    placeholder="请输入短信验证码"
+                    border="{{ false }}"
+                    use-button-slot
+                    bind:change="inputSmsChange"
+                >
+                    <van-button slot="button" size="small" type="primary" disabled="{{smsDisable}}" @tap="getSmsCode">{{smsBtnText}}</van-button>
+                </van-field>
+            </van-cell-group>
+        </van-dialog>
+    </view>
+</template>
+
+<script>
+import wepy from 'wepy';
+import { connect } from 'wepy-redux'
+import fly from "../utils/http.js";
+import baseUrl from '../utils/baseUrlConfig.js'
+import common from '../utils/common.js'
+
+@connect({
+    userInfo (state) {
+        return state.counter.userInfo
+    }
+})
+
+export default class Rent extends wepy.page {
+    config = {
+        navigationBarTitleText: '租充电宝',
+    };
+
+    data = {
+        radio: '1',
+        showBind: false,
+        realName: '',
+        mobile: '',
+        sms: '',
+        idcradImg: '',
+
+        smsBtnText: '发送验证码',
+        smsDisable: false,
+        smsTimer: -1,
+        smsCount: 0,
+        smsDelayed: 30,
+
+        isBind: '',
+        isVip: '',
+        goods_id: '',
+    };
+
+    components = {};
+
+    methods = {
+        inputNameChange(e) { this.realName = e.detail },
+        inputMobileChange(e) { this.mobile = e.detail },
+        inputSmsChange(e) { this.sms = e.detail },
+
+        onChange(event) {
+            this.setData({
+                radio: event.detail
+            });
+        },
+        onClick(event) {
+            const { name } = event.currentTarget.dataset;
+            this.radio = name;
+        },
+        onSubmit() {
+            if (this.radio == 2 && this.isVip == 0) {
+                wx.showModal({
+                    title: '开通会员',
+                    content: '会员30元/月，确定开通吗？',
+                    success: (res) => {
+                        if (res.confirm) {
+                            fly.post(baseUrl + '/index.php?s=/api/Recharge/submit', {
+                                wxapp_id: wx.getStorageSync('wxapp_id'),
+                                token: wx.getStorageSync('token'),
+                                plan_id: '10001'   // 10001  开通会员   10002是押金
+                            }).then(result => {
+                                let { code, msg, data } = result;
+                                if (code == 1) {
+                                    let payment = data.payment || {};
+                                    wx.requestPayment({
+                                        'timeStamp': payment.timeStamp,
+                                        'nonceStr': payment.nonceStr,
+                                        'package': 'prepay_id=' + payment.prepay_id,
+                                        'signType': 'MD5',
+                                        'paySign': payment.paySign,
+                                        'success': (res) => { 
+                                            this.createOrder();
+                                        },
+                                        'fail': (res) => {
+                                            console.log(2, res);
+                                            wx.showToast({
+                                                title: "充值失败",
+                                                icon: 'none',
+                                                duration: 3000
+                                            })
+                                        },
+                                        'complete': (res) => {
+                                            console.log(33, res);
+                                        }
+                                    })
+                                } else {
+                                    wx.showToast({
+                                        title: msg.error,
+                                        icon: 'none',
+                                        duration: 3000
+                                    })
+                                }
+                            })
+                        } else if (res.cancel) {
+                            console.log('用户点击取消')
+                        }
+                    }
+                })
+            } else if (this.radio == 1) {
+                if (!this.idcradImg) {
+                    wx.showToast({
+                        title: '请先上传身份证',
+                        icon: 'none',
+                    })
+                    return false
+                }
+                this.createOrder();
+            } else {
+                this.createOrder();
+            }
+        },
+        onClose(event) {
+            if (event.detail === 'confirm') {
+                if (!this.realName) {
+                    wx.showToast({
+                        title: '请输入姓名',
+                        icon: 'none',
+                    })
+                    this.$wxpage.selectComponent('#bindDialog').stopLoading();
+                    return false
+                }
+                if (!this.mobile) {
+                    wx.showToast({
+                        title: '请输入手机号',
+                        icon: 'none',
+                    })
+                    this.$wxpage.selectComponent('#bindDialog').stopLoading();
+                    return false
+                }
+                if (!common.isVerificationNumber(this.mobile)) {
+                    wx.showToast({
+                        title: '手机号码格式不正确',
+                        icon: 'none',
+                    })
+                    this.$wxpage.selectComponent('#bindDialog').stopLoading();
+                    return false
+                }
+                if (!this.sms) {
+                    wx.showToast({
+                        title: '请输入短信验证码',
+                        icon: 'none',
+                    })
+                    this.$wxpage.selectComponent('#bindDialog').stopLoading();
+                    return false
+                }
+                fly.post(baseUrl + '/index.php?s=/api/user/band_info', {
+                    wxapp_id: wx.getStorageSync('wxapp_id'),
+                    token: wx.getStorageSync('token'),
+                    real_name: this.realName,
+                    mobile: this.mobile,
+                }).then(result => {
+                    let { code, msg, data } = result;
+                    wx.showToast({
+                        title: msg,
+                        icon: 'none',
+                        duration: 3000
+                    })
+                    if (code == 1) {
+                        this.showBind = false;
+                    } else {
+                        this.$wxpage.selectComponent('#bindDialog').stopLoading();
+                    }
+                    this.$apply()
+                })
+            } else {
+                this.showBind=false
+            }
+        },
+        getSmsCode() {
+            if (this.smsDisable) {
+                return false;
+            }
+            if (!this.mobile) {
+                wx.showToast({
+                    title: '请输入手机号',
+                    icon: 'none',
+                })
+                return false
+            }
+            if (!common.isVerificationNumber(this.mobile)) {
+                wx.showToast({
+                    title: '手机号码格式不正确',
+                    icon: 'none',
+                })
+                return false
+            }
+            this.smsCount = this.smsDelayed;
+            this.smsBtnText = this.smsCount + 's后重发';
+            this.smsDisable = true;
+            this.$apply();
+            this.smsTimer = setInterval(() => {
+                this.smsCount--;
+                this.smsBtnText = this.smsCount + 's后重发';
+                this.$apply();
+                if (this.smsCount <= 0) {
+                    clearInterval(this.smsTimer);
+                    this.smsBtnText = '获取验证码';
+                    this.smsCount = this.smsDelayed;
+                    this.smsDisable = false;
+                    this.$apply();
+                }
+            }, 1000)
+            // this.$emit('getCode', this.mobile);
+        },
+        uploadImg() {
+            wx.chooseImage({
+                count: 1,
+                sourceType: ['camera'],
+                success: (res) => {
+                    const tempFilePaths = res.tempFilePaths
+                    wx.uploadFile({
+                        url: baseUrl + '/index.php?s=/api/upload/image',
+                        filePath: tempFilePaths[0],
+                        name: 'iFile',
+                        header: {
+                            'content-type':'application/x-www-form-urlencoded'
+                        },
+                        formData: {
+                            wxapp_id: wx.getStorageSync('wxapp_id'),
+                            token: wx.getStorageSync('token'),
+                        },
+                        success: (res) => {
+                            let result = JSON.parse(res.data)
+                            let { code, msg, data } = result;
+                            wx.showToast({
+                                title: msg,
+                                icon: 'none',
+                                duration: 3000
+                            })
+                            if (code == 1) {
+                                this.idcradImg = data.file_path;
+                            }
+                            this.$apply()
+                        }
+                    })
+                }
+            })
+        }
+    };
+
+    createOrder() {
+        return fly.post(baseUrl + '/index.php?s=/api/order/buyNow', {
+            wxapp_id: wx.getStorageSync('wxapp_id'),
+            token: wx.getStorageSync('token'),
+            order_type: this.radio,
+            id_pic: this.idcradImg,
+            goods_id: this.goods_id,
+        }).then(result => {
+            let { code, msg, data } = result;
+            if (code == 1) {
+                wx.showToast({
+                    title: msg,
+                    icon: 'success',
+                    duration: 3000
+                })
+                setTimeout(() => {
+                    wx.switchTab({url: "user"});
+                }, 2000)
+            } else {
+                wx.showToast({
+                    title: msg,
+                    icon: 'none',
+                    duration: 3000
+                })
+            }
+            this.$apply()
+        })
+    }
+
+    events = {};
+
+    watch = {};
+
+    computed = {};
+
+    onLoad(option) {
+        console.log('code:', option.code);
+        this.goods_id = option.code;
+        this.isVip = this.userInfo.grade_id || 0;
+        this.isBind = this.userInfo.is_band || 0;
+        if (this.isBind == 0) {
+            this.showBind = true;
+        }
+        if (this.isVip > 0) {
+            this.radio = '2'
+        }
+    }
+
+    onShow() {}
+}
+</script>
+
+<style lang='less'>
+.xyd-rent {
+    .title {
+        width: 100%;
+        font-size: 28rpx;
+        padding: 20rpx 30rpx;
+    }
+    .content {
+        width: 100%;
+    }
+    .btn-wp {
+        width: 100%;
+        padding: 60rpx 40rpx;
+    }
+    .dialog-content {
+        .van-cell-group {
+            padding-top: 20rpx;
+            padding-bottom: 60rpx;
+        }
+        .van-cell {
+            padding: 30rpx 32rpx;
+        }
+        .van-button--small {
+            width: 158rpx;
+        }
+    }
+    .idcard-wp {
+        width: 100%;
+        padding: 0 30rpx;
+        .idcard {
+            min-height: 400rpx;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #fff;
+        }
+    }
+}
+</style>

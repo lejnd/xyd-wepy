@@ -1,0 +1,252 @@
+<!--  -->
+<template>
+    <view class="home container">
+        <view class="home-item" @tap="gotoRent" wx:if="{{userInfo.grade_id!=10002}}">
+            <image src="../assets/img/home1.png" mode="aspectFit" />
+            <view class="text-wp" style="top: 45%; left: 25px">
+                <text class="name">租</text>
+            </view>
+        </view>
+        <view class="home-item" @tap="gotoRepay" wx:if="{{userInfo.grade_id!=10002}}">
+            <image src="../assets/img/home2.png" mode="aspectFit" />
+            <view class="text-wp" style="top: 50%; right: 25px">
+                <text class="name">还</text>
+            </view>
+        </view>
+        <view class="home-item" @tap="openVip" wx:if="{{userInfo.grade_id!=10002}}">
+            <image src="../assets/img/home3.png" mode="aspectFit" />
+            <view class="text-wp" style="top: 40%; left: 25px">
+                <view><text class="name">VIP</text></view>
+                <view class="deco"><text>开通会员每个月免押使用30天</text></view>
+            </view>
+        </view>
+        <view class="home-item" @tap="gotoAdmin" wx:if="{{userInfo.grade_id==10002}}">
+            <image src="../assets/img/home1.png" mode="aspectFit" />
+            <view class="text-wp" style="top: 45%; left: 25px">
+                <text class="name">确认归还</text>
+            </view>
+        </view>
+    </view>
+</template>
+
+<script>
+import wepy from 'wepy';
+import { connect } from 'wepy-redux'
+import { getUserInfo } from '../store/actions'
+import fly from "../utils/http.js";
+import baseUrl from '../utils/baseUrlConfig.js';
+import Dialog from '../components/vant/dialog/dialog';
+@connect({
+    userInfo (state) {
+        return state.counter.userInfo
+    }
+}, {
+    getUserInfo: getUserInfo
+})
+
+export default class Home extends wepy.page {
+    config = {
+        navigationBarTitleText: '校云电',
+    };
+
+    data = {
+    };
+    computed = {
+        isVip() {
+            return this.userInfo ? this.userInfo.grade_id || 0 : 0;
+        }
+    };
+
+    components = {
+        
+    };
+
+    methods = {
+        gotoRent() {
+            // this.$navigate({url: "rent"});
+            wx.scanCode({
+                success: (res) => {
+                    if (!res.path.includes('rent')) {
+                        wx.showToast({
+                            title: '请扫码正确的二维码',
+                            icon: 'none',
+                            duration: 2000
+                        })
+                        return false;
+                    }
+                    let path = res.path.split('/')[1];
+                    this.$navigate({url: path});
+                }
+            })
+        },
+        gotoRepay() {
+            if (this.userInfo.is_rent == 0) {
+                wx.showModal({
+                    title: '提示',
+                    content: '您还没有租用充电宝',
+                    confirmText: '去租用',
+                    success: (res) => {
+                        if (res.confirm) {
+                            console.log('用户点击确认')
+                        } else if (res.cancel) {
+                            console.log('用户点击取消')
+                        }
+                    }
+                })
+            } else {
+                this.$navigate({url: "repay"});
+            }
+        },
+        gotoAdmin() {
+            // this.$navigate({url: "admin"});
+            wx.scanCode({
+                success: (res) => {
+                    if (!res.path.includes('rent')) {
+                        wx.showToast({
+                            title: '请扫码正确的二维码',
+                            icon: 'none',
+                            duration: 2000
+                        })
+                        return false;
+                    }
+                    let path = res.path.split('/')[1];
+                    let queryStr = path.split('?')[1];
+                    let code = queryStr.split('=')[1];
+                    console.log(code);
+                    fly.post(baseUrl + '/index.php?s=/api/order/confirm_order', {
+                        wxapp_id: wx.getStorageSync('wxapp_id'),
+                        token: wx.getStorageSync('token'),
+                        goods_id: 1,
+                    }).then(result => {
+                        let { code, msg, data } = result;
+                        if (code == 1) {
+                            wx.showToast({
+                                title: msg,
+                                icon: 'success',
+                                duration: 3000
+                            })
+                        } else {
+                            wx.showToast({
+                                title: msg,
+                                icon: 'none',
+                                duration: 3000
+                            })
+                        }
+                        this.$apply()
+                    })
+                }
+            })
+        },
+        openVip() {
+            console.log(this.isVip, this.userInfo)
+            if (this.isVip > 0) {
+                wx.showModal({
+                    title: '提示',
+                    content: '您已经是会员',
+                    success (res) {
+                        if (res.confirm) {
+                            console.log('用户点击确定')
+                        } else if (res.cancel) {
+                            console.log('用户点击取消')
+                        }
+                    }
+                })
+            } else {
+                wx.showModal({
+                    title: '充值',
+                    content: '会员30元/月，确定开通吗？',
+                    success: (res) => {
+                        if (res.confirm) {
+                            fly.post(baseUrl + '/index.php?s=/api/Recharge/submit', {
+                                wxapp_id: wx.getStorageSync('wxapp_id'),
+                                token: wx.getStorageSync('token'),
+                                plan_id: '10001'   // 10001  开通会员   10002是押金
+                            }).then(result => {
+                                let { code, msg, data } = result;
+                                if (code == 1) {
+                                    let payment = data.payment || {};
+                                    wx.requestPayment({
+                                        'timeStamp': payment.timeStamp,
+                                        'nonceStr': payment.nonceStr,
+                                        'package': 'prepay_id=' + payment.prepay_id,
+                                        'signType': 'MD5',
+                                        'paySign': payment.paySign,
+                                        'success': (res) => {
+                                            wx.showToast({
+                                                title: "开通成功",
+                                                icon: 'success',
+                                                duration: 3000
+                                            })
+                                            this.methods.getUserInfo()
+                                        },
+                                        'fail': (res) => {
+                                            console.log(2, res);
+                                            wx.showToast({
+                                                title: "充值失败",
+                                                icon: 'none',
+                                                duration: 3000
+                                            })
+                                        },
+                                        'complete': (res) => {
+                                            console.log(33, this);
+                                        }
+                                    })
+                                } else {
+                                    wx.showToast({
+                                        title: msg.error,
+                                        icon: 'none',
+                                        duration: 3000
+                                    })
+                                }
+                            })
+                        } else if (res.cancel) {
+                            console.log('用户点击取消')
+                        }
+                    }
+                })
+            }
+        }
+    };
+
+    events = {};
+
+    watch = {};
+
+    onLoad() {
+        
+    }
+
+    onShow() {
+    }
+
+    onTabItemTap() {
+        this.methods.getUserInfo()
+    }
+}
+</script>
+
+<style lang='less'>
+.home {
+    padding: 30rpx 0;
+    .home-item {
+        position: relative;
+        margin-bottom: 20rpx;
+        .text-wp {
+            position: absolute;
+            .name {
+                font-size: 70rpx;
+                font-weight: 800;
+                color: #fff;
+            }
+            .deco {
+                color: #fff;
+                font-size: 24rpx;
+                margin-top: -16rpx;
+            }
+        }
+        image {
+            height: 155*2rpx;
+        }
+    }
+}
+</style>

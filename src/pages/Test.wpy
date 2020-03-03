@@ -1,0 +1,34 @@
+<!--  -->
+<template>
+    <view class="container"></view>
+</template>
+
+<script>
+import wepy from 'wepy';
+import fly from "../utils/http.js";
+import baseUrl from '../utils/baseUrlConfig.js'
+export default class Example extends wepy.page {
+    config = {
+        navigationBarTitleText: ''
+    };
+
+    data = {};
+
+    components = {};
+
+    methods = {};
+
+    events = {};
+
+    watch = {};
+
+    computed = {};
+
+    onLoad() {}
+
+    onShow() {}
+}
+</script>
+
+<style lang='less'>
+</style>

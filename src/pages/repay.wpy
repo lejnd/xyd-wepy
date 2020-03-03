@@ -1,0 +1,191 @@
+<!--  -->
+<template>
+    <view class="xyd-repay container">
+        <view class="title">
+            <text>租赁信息</text>
+        </view>
+        <view class="content">
+            <view>
+                <text>租赁时间：{{item.create_time}} - {{item.pay_time || '至今'}}</text>
+            </view>
+            <view>
+                <text>使用时间：1天1小时</text>
+            </view>
+            <view>
+                <text>服务费：¥{{item.pay_price}}</text>
+            </view>
+        </view>
+
+        <view class="title" wx:if="{{item.order_type==1}}">
+            <text>押金信息</text>
+            <text class="deco">身份证</text>
+        </view>
+        <view class="idcard-wp" wx:if="{{item.order_type==1}}">
+            <view class="idcard">
+                <image src="{{item.id_pic}}" mode="scaleToFill" lazy-load="false" />
+            </view>
+        </view>
+        <view class="content" wx:if="{{item.order_type==2}}">
+            <view>
+                <text>会员免押金</text>
+            </view>
+        </view>
+        <view class="btn-wp">
+            <van-button type="primary" block @tap="onSubmit">确定归还</van-button>
+        </view>
+    </view>
+</template>
+
+<script>
+import wepy from 'wepy';
+import fly from "../utils/http.js";
+import baseUrl from '../utils/baseUrlConfig.js'
+import common from '../utils/common'
+export default class Repay extends wepy.page {
+    config = {
+        navigationBarTitleText: '还充电宝'
+    };
+
+    data = {
+        item: {},
+    };
+
+    components = {};
+
+    methods = {
+        onSubmit() {
+            fly.post(baseUrl + '/index.php?s=/api/order/pay_order', {
+                wxapp_id: wx.getStorageSync('wxapp_id'),
+                token: wx.getStorageSync('token'),
+                order_no: this.item.order_no,
+            }).then(result => {
+                let { code, msg, data } = result;
+                if (code == 1) {
+                    let payment = data.payment || '';
+                    if (payment) {
+                        wx.requestPayment({
+                            'timeStamp': payment.timeStamp,
+                            'nonceStr': payment.nonceStr,
+                            'package': 'prepay_id=' + payment.prepay_id,
+                            'signType': 'MD5',
+                            'paySign': payment.paySign,
+                            'success': function (res) { 
+                                wx.showToast({
+                                    title: msg,
+                                    icon: 'success',
+                                    duration: 3000,
+                                    success: () => {
+                                        setTimeout(() => {
+                                            wx.switchTab({url: "home"});
+                                        }, 2000)
+                                    }
+                                })
+                            },
+                            'fail': function (res) {
+                                console.log(2, res);
+                            },
+                            'complete': function (res) {
+                                console.log(33, res);
+                            }
+                        })
+                    } else {
+                        wx.showToast({
+                            title: msg,
+                            icon: 'success',
+                            duration: 3000,
+                            success: () => {
+                                setTimeout(() => {
+                                    wx.switchTab({url: "home"});
+                                }, 2000)
+                            }
+                        })
+                    }
+                } else {
+                    wx.showToast({
+                        title: msg,
+                        icon: 'none',
+                        duration: 3000
+                    })
+                }
+                this.$apply()
+            })
+        }
+    };
+
+    getOrderList() {
+        fly.post(baseUrl + '/index.php?s=/api/order/order_list', {
+            wxapp_id: wx.getStorageSync('wxapp_id'),
+            token: wx.getStorageSync('token'),
+        }).then(result => {
+            let { code, msg, data } = result;
+            if (code == 1) {
+                let list = data.list.data || [];
+                this.item = list.filter(item => item.pay_status.value == 10)[0];
+            } else {
+                wx.showToast({
+                    title: msg,
+                    icon: 'none',
+                    duration: 3000
+                })
+            }
+            this.$apply()
+        })
+    }
+
+    events = {};
+
+    watch = {};
+
+    computed = {};
+
+    onLoad() {
+        this.getOrderList();
+    }
+
+    onShow() {
+    }
+}
+</script>
+
+<style lang='less'>
+.xyd-repay {
+    .title {
+        width: 100%;
+        font-size: 30rpx;
+        padding: 30rpx;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        .deco {
+            color: #999;
+        }
+    }
+    .content {
+        width: 100%;
+        padding: 30rpx;
+        background-color: #fff;
+        font-size: 28rpx;
+        margin-bottom: 20rpx;
+        line-height: 2;
+        .deco {
+            font-size: 24rpx;
+            color: #999;
+        }
+    }
+    .idcard-wp {
+        width: 100%;
+        padding: 30rpx;
+        background-color: #fff;
+        .idcard {
+            min-height: 400rpx;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    }
+    .btn-wp {
+        width: 100%;
+        padding: 60rpx 40rpx;
+    }
+}
+</style>

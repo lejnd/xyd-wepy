@@ -1,0 +1,155 @@
+<style lang="less">
+.container {
+    min-height: 100vh;
+    background-color: #f5f5f5;
+    padding-bottom: 20rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    //   justify-content: space-between;
+    box-sizing: border-box;
+    view {
+        box-sizing: border-box;
+    }
+}
+</style>
+
+<script>
+import wepy from 'wepy';
+import 'wepy-async-function';
+
+import { setStore, connect } from 'wepy-redux';
+import configStore from './store';
+import { getUserInfo } from './store/actions'
+import fly from "./utils/http.js";
+import baseUrl from './utils/baseUrlConfig.js';
+
+const store = configStore();
+setStore(store);
+
+@connect({}, {
+    getUserInfo: getUserInfo
+})
+
+export default class extends wepy.app {
+    config = {
+        pages: [
+            //   'pages/index',
+            // 'pages/rent',
+
+
+            'pages/home',
+            'pages/rent',
+            'pages/repay',
+            'pages/user',
+            'pages/admin',
+        ],
+        window: {
+            backgroundTextStyle: 'light',
+            navigationBarBackgroundColor: '#fff',
+            navigationBarTitleText: 'WeChat',
+            navigationBarTextStyle: 'black'
+        },
+        tabBar: {
+            color: '#999',
+            selectedColor: '#FF6C00',
+            list: [
+                {
+                    pagePath: 'pages/home',
+                    iconPath: './assets/img/home-icon.png',
+                    selectedIconPath: './assets/img/home-icon-active.png',
+                    text: '首页'
+                },
+                {
+                    pagePath: 'pages/user',
+                    iconPath: './assets/img/user-icon.png',
+                    selectedIconPath: './assets/img/user-icon-active.png',
+                    text: '我的'
+                }
+            ]
+        },
+        usingComponents: {
+            "van-button": "./components/vant/button/index",
+            "van-radio": "./components/vant/radio/index",
+            "van-radio-group": "./components/vant/radio-group/index",
+            "van-cell": "./components/vant/cell/index",
+            "van-cell-group": "./components/vant/cell-group/index",
+            "van-dialog": "./components/vant/dialog/index",
+            "van-field": "./components/vant/field/index",
+            "van-icon": "./components/vant/icon/index",
+            "van-tab": "./components/vant/tab/index",
+            "van-tabs": "./components/vant/tabs/index",
+        }
+    };
+
+    globalData = {
+        userInfo: null
+    };
+
+    constructor() {
+        super();
+        this.use('requestfix');
+    }
+
+    onLaunch() {
+        this.testAsync();
+        this.doLogin();
+    }
+
+    sleep(s) {
+        return new Promise((resolve, reject) => {
+            setTimeout(() => {
+                resolve('promise resolved');
+            }, s * 1000);
+        });
+    }
+
+    async testAsync() {
+        const data = await this.sleep(3);
+        console.log(data);
+    }
+
+    getUserInfo(cb) {
+        const that = this;
+        if (this.globalData.userInfo) {
+            return this.globalData.userInfo;
+        }
+        wepy.getUserInfo({
+            success(res) {
+                that.globalData.userInfo = res.userInfo;
+                cb && cb(res.userInfo);
+            }
+        });
+    }
+
+    doLogin() {
+        wx.login({
+            success: (res) => {
+                if (res.code) {
+                    wx.setStorageSync('wxapp_id', '10001');
+                    //发起网络请求
+                    fly.post(baseUrl + '/index.php?s=/api/user/login', {
+                        wxapp_id: wx.getStorageSync('wxapp_id'),
+                        code: res.code
+                    }).then(result => {
+                        let { code, msg, data } = result;
+                        if (code == 1) {
+                            wx.setStorageSync('token', data.token);
+                            this.methods.getUserInfo()
+                        } else {
+                            wx.showToast({
+                                title: msg,
+                                icon: 'none',
+                                duration: 3000,
+                                mask: true
+                            })
+                        }
+                    })
+                } else {
+                    console.log('登录失败！' + res.errMsg)
+                }
+            }
+        })
+    }
+}
+</script>
